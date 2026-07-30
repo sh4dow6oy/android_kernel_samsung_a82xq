@@ -211,9 +211,6 @@ CONFIG_MCL=y
 # Debug for SELinux
 CONFIG_SECURITY_DEBUG_UNLABELED=y
 
-# Disable feature for header_version@2
-# CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE is not set
-
 # CONFIG_LOCALVERSION_AUTO is not set
 # CONFIG_FHANDLE is not set
 CONFIG_AUDIT=y
