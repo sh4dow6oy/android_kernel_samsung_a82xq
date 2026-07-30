@@ -1382,18 +1382,29 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 			if (ois_tele_cal_mark == 0xBB) {
 				ois_gain_rear3_result = 0;
 				ois_sr_rear3_result = 0;
+				
+				/* INSTRUCTIUNILE CARE ITI DADEAU EROARE TREBUIE SA FIE AICI IN INTERIOR */
+				ConfAddr += OIS_XYGG_START_OFFSET;
+				memcpy(ois_tele_xygg, &e_ctrl->cal_data.mapdata[ConfAddr], OIS_XYGG_SIZE);
+				ConfAddr -= OIS_XYGG_START_OFFSET;
+
+				ConfAddr += OIS_XYSR_START_OFFSET;
+				memcpy(ois_tele_xysr, &e_ctrl->cal_data.mapdata[ConfAddr], OIS_XYSR_SIZE);
+				ConfAddr -= OIS_XYSR_START_OFFSET;
+
+				ConfAddr -= TELE_OIS_CENTER_SHIFT_START_OFFSET;
+				memcpy(ois_tele_center_shift, &e_ctrl->cal_data.mapdata[ConfAddr], OIS_CENTER_SHIFT_SIZE);
+				ConfAddr += TELE_OIS_CENTER_SHIFT_START_OFFSET;
 			} else {
 				ois_gain_rear3_result = 1;
 				ois_sr_rear3_result = 1;
 			}
-		}
+		} /* <-- AICI SE INCHIDE isValidIdx */
 #else
-		/* Fallback pentru R5Q / dispozitive dual camera sau fara rear3 */
+		/* Fallback pentru R5Q */
 		ois_gain_rear3_result = 1;
 		ois_sr_rear3_result = 1;
 #endif
-
-	} /* <-- ACEASTA ACO LADĂ ÎNCHIDE BLOCUL IF ANTERIOR (ex. if (e_ctrl->soc_info.index == CAM_EEPROM_IDX_BACK)) */
 
 	else if (e_ctrl->soc_info.index == CAM_EEPROM_IDX_BACK2) {
 		/* Codul pentru BACK2... */
