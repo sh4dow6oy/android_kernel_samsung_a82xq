@@ -1368,7 +1368,7 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 			memcpy(ois_wide_xysr, &e_ctrl->cal_data.mapdata[ConfAddr], OIS_XYSR_SIZE);
 		}
 
-#if defined(CONFIG_SAMSUNG_REAR_TRIPLE) && !defined(CONFIG_SEC_A82XQ_PROJECT)
+#if defined(CONFIG_SAMSUNG_REAR_TRIPLE) && !defined(CONFIG_SEC_R5Q_PROJECT)
 		if(isValidIdx(ADDR_S_OIS, &ConfAddr) == 1) {
 
 			ConfAddr -= WIDE_OIS_CENTER_SHIFT_START_OFFSET;
@@ -1385,6 +1385,12 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 				ois_gain_rear3_result = 1;
 				ois_sr_rear3_result = 1;
 			}
+		}
+#else
+		/* Fallback pentru R5Q / dispozitive dual camera sau fara rear3 */
+		ois_gain_rear3_result = 1; /* 1: No cal / Not supported */
+		ois_sr_rear3_result = 1;
+#endif
 
 			ConfAddr += OIS_XYGG_START_OFFSET;
 			memcpy(ois_tele_xygg, &e_ctrl->cal_data.mapdata[ConfAddr], OIS_XYGG_SIZE);
