@@ -2949,6 +2949,11 @@ static ssize_t ois_gain_rear_show(struct device *dev,
 		return rc;
 	return 0;
 }
+uint32_t ois_gain_rear3_result = 2; // 0:normal, 1: No cal, 2: rear cal fail
+EXPORT_SYMBOL(ois_gain_rear3_result);
+
+uint32_t ois_sr_rear3_result = 2;   // 0:normal, 1: No cal, 2: rear cal fail
+EXPORT_SYMBOL(ois_sr_rear3_result);
 
 #if defined(CONFIG_SAMSUNG_REAR_TRIPLE) && !defined(CONFIG_SEC_R5Q_PROJECT)
 extern uint8_t ois_tele_xygg[OIS_XYGG_SIZE];
