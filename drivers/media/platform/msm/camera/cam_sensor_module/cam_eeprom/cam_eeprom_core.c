@@ -1369,7 +1369,7 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 		}
 
 #if defined(CONFIG_SAMSUNG_REAR_TRIPLE) && !defined(CONFIG_SEC_R5Q_PROJECT)
-		if(isValidIdx(ADDR_S_OIS, &ConfAddr) == 1) {
+		if (isValidIdx(ADDR_S_OIS, &ConfAddr) == 1) {
 
 			ConfAddr -= WIDE_OIS_CENTER_SHIFT_START_OFFSET;
 			memcpy(ois_wide_center_shift, &e_ctrl->cal_data.mapdata[ConfAddr], OIS_CENTER_SHIFT_SIZE);
@@ -1378,6 +1378,7 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 			ConfAddr += OIS_CAL_MARK_START_OFFSET;
 			memcpy(&ois_tele_cal_mark, &e_ctrl->cal_data.mapdata[ConfAddr], 1);
 			ConfAddr -= OIS_CAL_MARK_START_OFFSET;
+
 			if (ois_tele_cal_mark == 0xBB) {
 				ois_gain_rear3_result = 0;
 				ois_sr_rear3_result = 0;
@@ -1388,9 +1389,19 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 		}
 #else
 		/* Fallback pentru R5Q / dispozitive dual camera sau fara rear3 */
-		ois_gain_rear3_result = 1; /* 1: No cal / Not supported */
+		ois_gain_rear3_result = 1;
 		ois_sr_rear3_result = 1;
 #endif
+
+	} /* <-- ACEASTA ACO LADĂ ÎNCHIDE BLOCUL IF ANTERIOR (ex. if (e_ctrl->soc_info.index == CAM_EEPROM_IDX_BACK)) */
+
+	else if (e_ctrl->soc_info.index == CAM_EEPROM_IDX_BACK2) {
+		/* Codul pentru BACK2... */
+	}
+
+	rc = cam_eeprom_check_firmware_cal(e_ctrl->is_supported, &mInfo);
+	return rc;
+} /* <-- Aceasta este acolada care inchide intreaga functie */
 
 			ConfAddr += OIS_XYGG_START_OFFSET;
 			memcpy(ois_tele_xygg, &e_ctrl->cal_data.mapdata[ConfAddr], OIS_XYGG_SIZE);
