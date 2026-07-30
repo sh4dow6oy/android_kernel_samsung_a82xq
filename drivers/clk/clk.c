@@ -2756,6 +2756,8 @@ static u32 debug_suspend = 1;
 static DEFINE_MUTEX(clk_debug_lock);
 static HLIST_HEAD(clk_debug_list);
 
+static uint32_t clk_debugfs_bus_cl_id;
+
 static struct hlist_head *orphan_list[] = {
 	&clk_orphan_list,
 	NULL,
