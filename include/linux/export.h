@@ -53,7 +53,7 @@ extern struct module __this_module;
 #define __CRC_SYMBOL(sym, sec)						\
 	asm("	.section \"___kcrctab" sec "+" #sym "\", \"a\"	\n"	\
 	    "	.weak	" VMLINUX_SYMBOL_STR(__crc_##sym) "	\n"	\
-	    "	.long	" VMLINUX_SYMBOL_STR(__crc_##sym) "	\n"	\
+	    "	.quad	" VMLINUX_SYMBOL_STR(__crc_##sym) "	\n"	\
 	    "	.previous					\n");
 #endif
 #else
