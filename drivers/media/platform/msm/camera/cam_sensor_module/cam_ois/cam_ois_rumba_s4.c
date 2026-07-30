@@ -24,7 +24,6 @@
 #include "cam_ois_rumba_s4.h"
 #include "cam_ois_thread.h"
 #include "cam_ois_core.h"
-#include "cam_eeprom_dev.h"
 
 #define OIS_FW_STATUS_OFFSET	(0x00FC)
 #define OIS_FW_STATUS_SIZE		(4)
@@ -39,12 +38,6 @@
 #define OIS_FW_UPDATE_PACKET_SIZE (256)
 #define PROGCODE_SIZE			 (1024 * 28)
 #define MAX_RETRY_COUNT 		 (3)
-#define OIS_GYRO_SCALE_FACTOR_LSM6DSO (114)
-#define MAX_EFS_DATA_LENGTH (30)
-#define MAX_SFS_DATA_LENGTH (4096)
-#define OIS_GYRO_CAL_VALUE_FROM_EFS "/efs/FactoryApp/camera_ois_gyro_cal"
-#define OIS_GYRO_CAL_VALUE_FROM_SFS "/sys/class/sensors/gyro_sensor/selftest"
-
 #define CAMERA_OIS_EXT_CLK_12MHZ 0xB71B00
 #define CAMERA_OIS_EXT_CLK_17MHZ 0x1036640
 #define CAMERA_OIS_EXT_CLK_19MHZ 0x124F800
@@ -71,29 +64,6 @@ int cam_ois_i2c_byte_read(struct cam_ois_ctrl_t *o_ctrl, uint32_t addr, uint16_t
 	CAM_DBG(CAM_OIS, "addr = 0x%x data: 0x%x", addr, *data);
 	return rc;
 }
-
-// ois
-int cam_ois_i2c_read(struct cam_ois_ctrl_t *o_ctrl,
-	uint32_t addr, uint32_t *data,
-	enum camera_sensor_i2c_type addr_type,
-	enum camera_sensor_i2c_type data_type)
-{
-	int rc = 0;
-	uint32_t temp;
-
-	rc = camera_io_dev_read(&o_ctrl->io_master_info,
-		addr, &temp,
-		addr_type, data_type);
-	if (rc < 0) {
-		CAM_ERR(CAM_OIS, "ois i2c byte read failed addr : 0x%x data : 0x%x", addr, *data);
-		return rc;
-	}
-	*data = temp;
-
-	CAM_DBG(CAM_OIS, "addr = 0x%x data: 0x%x", addr, *data);
-	return rc;
-}
-
 
 int cam_ois_i2c_write(struct cam_ois_ctrl_t *o_ctrl, uint32_t addr, uint32_t data,
 		enum camera_sensor_i2c_type addr_type,
@@ -131,7 +101,7 @@ int cam_ois_set_shift(struct cam_ois_ctrl_t *o_ctrl)
 	CAM_DBG(CAM_OIS, "Enter");
 	CAM_INFO(CAM_OIS, "SET :: SHIFT_CALIBRATION");
 
-	rc = cam_ois_i2c_write(o_ctrl, 0x0039, 0x01,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);	 // OIS shift calibration enable
+	rc = cam_ois_i2c_write(o_ctrl, 0x0039, 0x00,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);	 // OIS shift calibration enable
 	if (rc < 0) {
 		CAM_ERR(CAM_OIS, "ois shift calibration enable failed, i2c fail");
 		goto ERROR;
@@ -142,7 +112,6 @@ ERROR:
 	CAM_DBG(CAM_OIS, "Exit");
 	return rc;
 }
-
 int cam_ois_wait_idle(struct cam_ois_ctrl_t *o_ctrl, int retries)
 {
 	uint16_t status = 0;
@@ -167,40 +136,14 @@ int cam_ois_wait_idle(struct cam_ois_ctrl_t *o_ctrl, int retries)
 	} while ((status != 0x01) && (status != 0x13));
 	return 0;
 }
-
-int cam_ois_wait_idle_alt(struct cam_ois_ctrl_t *o_ctrl, int retries)
-{
-	uint16_t status = 0;
-	int ret = 0;
-
-	/* check ois status if it`s idle or not */
-	/* OISSTS register(0x0001) 1Byte read */
-	/* 0x01 == IDLE State */
-	do {
-		ret = cam_ois_i2c_byte_read(o_ctrl, 0x0001, &status);
-		if (status != 0x13)
-			break;
-		if (--retries < 0) {
-			if (ret < 0) {
-				CAM_ERR(CAM_OIS, "failed due to i2c fail");
-				return -EIO;
-			}
-			CAM_ERR(CAM_OIS, "ois status is not idle, current status %d", status);
-			return -EBUSY;
-		}
-		usleep_range(10000, 11000);
-	} while (status == 0x13);
-	return 0;
-}
-
 int cam_ois_create_shift_table(struct cam_ois_ctrl_t *o_ctrl, uint8_t *shift_data)
 {
 	int i = 0, j = 0, k = 0;
 	int16_t dataX[9] = {0, }, dataY[9] = {0, };
 	uint16_t tempX = 0, tempY = 0;
 	uint32_t addr_en[1] = {0x00};
-	uint32_t addr_x[1] = {0x10};
-	uint32_t addr_y[1] = {0x22};
+	uint32_t addr_x[1] = {0x08};
+	uint32_t addr_y[1] = {0x20};
 
 	if (!o_ctrl || !shift_data)
 		goto ERROR;
@@ -253,7 +196,7 @@ ERROR:
 }
 int32_t cam_ois_read_user_data_section(struct cam_ois_ctrl_t *o_ctrl, uint16_t addr, int size, uint8_t *user_data)
 {
-	uint8_t read_data[0x02FF] = {0, }, shift_data[0xFF] = {0, };
+	uint8_t read_data[72] = {0, }, shift_data[56] = {0, };
 	int rc = 0, i = 0;
 	uint16_t read_status = 0;
 
@@ -269,7 +212,7 @@ int32_t cam_ois_read_user_data_section(struct cam_ois_ctrl_t *o_ctrl, uint16_t a
 	/* User Data Area & Address Setting - 1Page */
 	rc = cam_ois_i2c_write(o_ctrl, 0x000F, 0x40,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);	// DLFSSIZE_W Register(0x000F) : Size = 4byte * Value
 	rc |= cam_ois_i2c_write(o_ctrl, 0x0010, 0x0000,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_WORD);
-	rc |= cam_ois_i2c_write(o_ctrl, 0x000E, 0x04,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); // DFLSCMD Register(0x000E) = READ
+	rc |= cam_ois_i2c_write(o_ctrl, 0x000E, 0x04,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_WORD); // DFLSCMD Register(0x000E) = READ
 	if (rc < 0)
 		goto ERROR;
 
@@ -291,7 +234,7 @@ int32_t cam_ois_read_user_data_section(struct cam_ois_ctrl_t *o_ctrl, uint16_t a
 	/* OIS Hall Cal. Info Read */
 	rc = camera_io_dev_read_seq(&o_ctrl->io_master_info,
 		0x0100, read_data,
-		CAMERA_SENSOR_I2C_TYPE_WORD,CAMERA_SENSOR_I2C_TYPE_BYTE, 0xFF);
+		CAMERA_SENSOR_I2C_TYPE_WORD,CAMERA_SENSOR_I2C_TYPE_BYTE, 72);
 	if (rc < 0)
 		goto ERROR;
 
@@ -301,40 +244,11 @@ int32_t cam_ois_read_user_data_section(struct cam_ois_ctrl_t *o_ctrl, uint16_t a
 			read_data[4], read_data[5], read_data[6]);
 	memcpy(user_data, read_data, size * sizeof(uint8_t));
 
-	
+
 	/* User Data Area & Address Setting - 2Page */
-	rc = cam_ois_i2c_write(o_ctrl, 0x000F, 0x40,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);	// DLFSSIZE_W Register(0x000F) : Size = 4byte * Value
-	rc |= cam_ois_i2c_write(o_ctrl, 0x0010, 0x0001,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_WORD);
-	rc |= cam_ois_i2c_write(o_ctrl, 0x000E, 0x04,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); // DFLSCMD Register(0x000E) = READ
-	if (rc < 0)
-		goto ERROR;
-
-	for (i = MAX_RETRY_COUNT; i >= 0; i--) {
-		if (cam_ois_i2c_byte_read(o_ctrl, 0x000E, &read_status) < 0)
-			goto ERROR;
-		if (read_status == 0x14) /* Read Complete? */
-			break;
-		usleep_range(10000, 11000); // give some delay to wait
-	}
-	if (i < 0) {
-		CAM_ERR(CAM_OIS, "DFLSCMD Read command fail");
-		goto ERROR;
-	}
-
-	/* OIS Cal Data Read */
-	rc = camera_io_dev_read_seq(&o_ctrl->io_master_info,
-		0x0100, read_data + 0x0100,
-		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE, 0xFF);
-	if (rc < 0)
-		goto ERROR;
-
-	/* User Data Area & Address Setting - 3Page */
-	rc = cam_ois_i2c_write(o_ctrl, 0x000F, 0x40,
-		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);  // DLFSSIZE_W Register(0x000F) : Size = 4byte * Value
-	rc |= cam_ois_i2c_write(o_ctrl, 0x0010, 0x0002,
-		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_WORD); // Data Write Start Address Offset : 0x0000
-	rc |= cam_ois_i2c_write(o_ctrl, 0x000E, 0x04,
-		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); // DFLSCMD Register(0x000E) = READ
+	rc = cam_ois_i2c_write(o_ctrl, 0x000F, 0x0E,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);	// DLFSSIZE_W Register(0x000F) : Size = 4byte * Value
+	rc |= cam_ois_i2c_write(o_ctrl, 0x0010, 0x0004,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_WORD);
+	rc |= cam_ois_i2c_write(o_ctrl, 0x000E, 0x04,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_WORD); // DFLSCMD Register(0x000E) = READ
 	if (rc < 0)
 		goto ERROR;
 
@@ -354,7 +268,7 @@ int32_t cam_ois_read_user_data_section(struct cam_ois_ctrl_t *o_ctrl, uint16_t a
 	/* OIS Shift Calibration Read */
 	rc = camera_io_dev_read_seq(&o_ctrl->io_master_info,
 		0x0100, shift_data,
-		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE, 0xFF);
+		CAMERA_SENSOR_I2C_TYPE_WORD,CAMERA_SENSOR_I2C_TYPE_BYTE, 56);
 	if (rc < 0)
 		goto ERROR;
 
@@ -609,12 +523,16 @@ int cam_ois_init(struct cam_ois_ctrl_t *o_ctrl)
 	} while ((status != 0x01) && (status != 0x13));
 
 	rc = cam_ois_read_cal_info(o_ctrl, &chksum_rumba, &chksum_line, &is_different_crc);
-	if (rc < 0)
-		CAM_ERR(CAM_OIS, "read user data section fail %d", rc);
 
-	rc = cam_ois_rumba_init(o_ctrl);
-	if (rc < 0)
-		CAM_ERR(CAM_OIS, "OIS RUMBA init failed %d", rc);
+ 	rc = cam_ois_i2c_write(o_ctrl, 0x0262, 0x55,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
+	if (rc < 0) {
+		CAM_ERR(CAM_OIS, "ois i2c write failed rc %d", rc);
+	} 
+ 	rc = cam_ois_i2c_write(o_ctrl, 0x0264, 0x6F12033B,
+		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_DWORD);
+ 	if (rc < 0) {
+		CAM_ERR(CAM_OIS, "ois i2c write failed, rc %d", rc);
+	}
 
 	// OIS Shift Setting
 	rc = cam_ois_set_shift(o_ctrl);
@@ -639,32 +557,6 @@ int cam_ois_init(struct cam_ois_ctrl_t *o_ctrl)
 	rc = cam_ois_i2c_write(o_ctrl, 0x005E, 0x00,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
 	if (rc < 0) {
 		CAM_ERR(CAM_OIS, "ois set ggfade settings failed %d", rc);
-		return rc;
-	}
-
-	if (cam_ois_wait_idle_alt(o_ctrl, 20) < 0) {
-		CAM_ERR(CAM_OIS, "wait ois idle status failed");
-	}
-
-	// OIS Still
-	rc = cam_ois_set_ois_mode(o_ctrl, 0x00);
-	if (rc < 0)
-		CAM_ERR(CAM_OIS, "OIS Still failed %d", rc);
-
-	//GYRO settings
-	rc = cam_ois_i2c_write(o_ctrl, 0x0240, 0x01,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
-	if (rc < 0) {
-		CAM_ERR(CAM_OIS, "ois set gyro settings failed %d", rc);
-		return rc;
-	}
-	rc = cam_ois_i2c_write(o_ctrl, 0x0241, 0x00,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
-	if (rc < 0) {
-		CAM_ERR(CAM_OIS, "ois set gyro settings failed %d", rc);
-		return rc;
-	}
-	rc = cam_ois_i2c_write(o_ctrl, 0x0242, 0x00,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
-	if (rc < 0) {
-		CAM_ERR(CAM_OIS, "ois set gyro settings failed %d", rc);
 		return rc;
 	}
  
@@ -928,7 +820,7 @@ int cam_ois_set_ggfadedown(struct cam_ois_ctrl_t *o_ctrl, uint32_t value)
 
 int cam_ois_shift_calibration(struct cam_ois_ctrl_t *o_ctrl, uint16_t af_position, uint16_t subdev_id)
 {
-	uint32_t AF_Shift_Calibration = 0;
+	uint8_t data[4] = {0, };
 	int rc = 0;
 
 	if (!o_ctrl)
@@ -949,16 +841,17 @@ int cam_ois_shift_calibration(struct cam_ois_ctrl_t *o_ctrl, uint16_t af_positio
 	}
 
 	if (o_ctrl->shift_tbl[0].ois_shift_used) {
-		AF_Shift_Calibration = ((o_ctrl->shift_tbl[0].ois_shift_y[af_position] >> 8) & 0x00FF);
-		AF_Shift_Calibration |= (o_ctrl->shift_tbl[0].ois_shift_y[af_position] & 0x00FF) << 8;
-		AF_Shift_Calibration |= ((o_ctrl->shift_tbl[0].ois_shift_x[af_position] >> 8) & 0x00FF) << 16;
-		AF_Shift_Calibration |= (o_ctrl->shift_tbl[0].ois_shift_x[af_position] & 0x00FF) << 24;
+		data[0] = (o_ctrl->shift_tbl[0].ois_shift_x[af_position] & 0x00FF);
+		data[1] = ((o_ctrl->shift_tbl[0].ois_shift_x[af_position] >> 8) & 0x00FF);
+		data[2] = (o_ctrl->shift_tbl[0].ois_shift_y[af_position] & 0x00FF);
+		data[3] = ((o_ctrl->shift_tbl[0].ois_shift_y[af_position] >> 8) & 0x00FF);
 
 		CAM_DBG(CAM_OIS, "write for WIDE %d", subdev_id);
-
-		rc = cam_ois_i2c_write(o_ctrl, 0x004C, AF_Shift_Calibration,
-			CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_DWORD);
-		if (rc < 0)
+#if 0
+		rc = camera_io_dev_write_seq(&o_ctrl->io_master_info,
+			0x004C, data, CAMERA_SENSOR_I2C_TYPE_WORD, 4);
+#endif
+			if (rc < 0)
 			CAM_ERR(CAM_OIS, "write module#1 ois shift calibration error");
 	}
 
@@ -1133,248 +1026,6 @@ void cam_ois_version(struct cam_ois_ctrl_t *o_ctrl)
 	CAM_INFO(CAM_OIS, "End");
 }
 
-static noinline_for_stack long __get_file_size(struct file *file)
-{
-	struct kstat st;
-	u32 request_mask = (STATX_MODE | STATX_SIZE);
-
-	if (vfs_getattr(&file->f_path, &st, request_mask, KSTAT_QUERY_FLAGS))
-		return -1;
-	if (!S_ISREG(st.mode))
-		return -1;
-	if (st.size != (long)st.size)
-		return -1;
-
-	return st.size;
-}
-
-long cam_ois_read_efs(char *efs_path, u8 *buf, int buflen)
-{
-	struct file *fp = NULL;
-	mm_segment_t old_fs;
-	char *filename;
-	long ret = 0, fsize = 0, nread = 0;
-	loff_t file_offset = 0;
-
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	filename = __getname();
-	if (unlikely(!filename)) {
-		set_fs(old_fs);
-		return 0;
-	}
-
-	snprintf(filename, PATH_MAX, "%s", efs_path);
-
-	fp = filp_open(filename, O_RDONLY, 0);
-	if (IS_ERR_OR_NULL(fp)) {
-		__putname(filename);
-		set_fs(old_fs);
-		return 0;
-	}
-
-	fsize = __get_file_size(fp);
-	if (fsize <= 0 || fsize > buflen) {
-		CAM_ERR(CAM_OIS, " __get_file_size fail(%ld)", fsize);
-		ret = 0;
-		goto p_err;
-	}
-
-	CAM_DBG(CAM_OIS, "Fsize (%ld)", fsize);
-
-	nread = kernel_read(fp, buf, fsize, &file_offset);
-
-	ret = nread;
-
-p_err:
-	__putname(filename);
-	filp_close(fp, current->files);
-	set_fs(old_fs);
-
-	return ret;
-}
-
-int cam_ois_get_offset_data(struct cam_ois_ctrl_t *o_ctrl,
-	long *raw_data_x, long *raw_data_y)
-{
-	int ret = 0, i = 0, j = 0, comma_offset = 0;
-	bool detect_comma = false;
-	char efs_data[MAX_EFS_DATA_LENGTH] = { 0 };
-	unsigned char *buffer = NULL;
-	long efs_size = 0;
-
-	CAM_DBG(CAM_OIS, "cam_ois_get_offset_data E");
-	if (!o_ctrl)
-		return 0;
-
-	buffer = vmalloc(MAX_EFS_DATA_LENGTH);
-	if (!buffer) {
-		CAM_ERR(CAM_OIS, "vmalloc failed");
-		return -1;
-	}
-
-	efs_size = cam_ois_read_efs(OIS_GYRO_CAL_VALUE_FROM_EFS, buffer, MAX_EFS_DATA_LENGTH);
-	if (efs_size == 0) {
-			CAM_ERR(CAM_OIS, "efs read failed");
-			ret = -1;
-			goto ERROR;
-	}
-
-	i = 0;
-	detect_comma = false;
-	for (i = 0; i < efs_size; i++) {
-		if (*(buffer + i) == ',') {
-			comma_offset = i;
-			detect_comma = true;
-			break;
-		}
-	}
-
-	if (detect_comma) {
-		memset(efs_data, 0x00, sizeof(efs_data));
-		j = 0;
-		for (i = 0; i < comma_offset; i++) {
-			if (buffer[i] != '.') {
-				efs_data[j] = buffer[i];
-				j++;
-			}
-		}
-		kstrtol(efs_data, 10, raw_data_x);
-
-		memset(efs_data, 0x00, sizeof(efs_data));
-		j = 0;
-		for (i = comma_offset + 1; i < efs_size; i++) {
-			if (buffer[i] != '.') {
-				efs_data[j] = buffer[i];
-				j++;
-			}
-		}
-		kstrtol(efs_data, 10, raw_data_y);
-	} else {
-		CAM_INFO(CAM_OIS, "cannot find delimeter");
-		ret = -1;
-	}
-	CAM_INFO(CAM_OIS, "cam_ois_get_offset_data : X raw_x = %ld, raw_y = %ld",
-		*raw_data_x, *raw_data_y);
-
-ERROR:
-	if (buffer) {
-		vfree(buffer);
-		buffer = NULL;
-	}
-
-	return ret;
-}
-
-void cam_ois_get_selftest_data(struct cam_ois_ctrl_t *o_ctrl,
-	long *raw_data_x, long *raw_data_y)
-{
-	int i = 0, j = 0, comma_offset = 0, comma_offset2 =0;
-	bool detect_comma = false;
-	bool detect_comma2 = false;
-	char efs_data[30] = { 0 };
-	unsigned char *buffer = NULL;
-	long efs_size = 0;
-
-	CAM_DBG(CAM_OIS, "cam_ois_get_offset_data E");
-
-	buffer = vmalloc(MAX_SFS_DATA_LENGTH);
-	if (!buffer) {
-		CAM_ERR(CAM_OIS, "vmalloc failed");
-		return;
-	}
-
-	efs_size = cam_ois_read_efs(OIS_GYRO_CAL_VALUE_FROM_SFS, buffer, MAX_SFS_DATA_LENGTH);
-	if (efs_size == 0) {
-			CAM_ERR(CAM_OIS, "efs read failed");
-			goto ERROR;
-	}
-
-	i = 0;
-	detect_comma = false;
-	for (i = 0; i < efs_size; i++) {
-		if (*(buffer + i) == ',') {
-			comma_offset = i;
-			detect_comma = true;
-			break;
-		}
-	}
-	for (i = i+1; i < efs_size; i++) {
-			if (*(buffer + i) == ',') {
-			comma_offset2 = i;
-			detect_comma2 = true;
-			break;
-		}
-	}
-
-	if (detect_comma) {
-		memset(efs_data, 0x00, sizeof(efs_data));
-		j = 0;
-		for (i = 0; i < comma_offset; i++) {
-			if (buffer[i] != '.') {
-				efs_data[j] = buffer[i];
-				j++;
-			}
-		}
-		kstrtol(efs_data, 10, raw_data_x);
-		if (detect_comma2){
-		memset(efs_data, 0x00, sizeof(efs_data));
-		j = 0;
-		for (i = comma_offset + 1; i < comma_offset2; i++) {
-			if (buffer[i] != '.') {
-				efs_data[j] = buffer[i];
-				j++;
-			}
-		}
-		kstrtol(efs_data, 10, raw_data_y);
-		}
-		else{
-		CAM_INFO(CAM_OIS, "cannot find second delimeter");
-		}
-	} else {
-		CAM_INFO(CAM_OIS, "cannot find delimeter");
-	}
-	CAM_INFO(CAM_OIS, "cam_ois_get_offset_data : X raw_x = %ld, raw_y = %ld",
-		*raw_data_x, *raw_data_y);
-
-ERROR:
-	if (buffer) {
-		vfree(buffer);
-		buffer = NULL;
-	}
-
-	return;
-}
-
-int cam_ois_gyro_sensor_calibration(struct cam_ois_ctrl_t *o_ctrl,
-	long *raw_data_x, long *raw_data_y)
-{
-	int result = 0;
-	long X_ZRO = 0;
-	long Y_ZRO = 0;
-	long XGZERO = 0, YGZERO = 0;
-	int scale_factor = OIS_GYRO_SCALE_FACTOR_LSM6DSO;
-
-	cam_ois_get_selftest_data(o_ctrl, &X_ZRO, &Y_ZRO);
-
-	XGZERO = (X_ZRO) / 8.75 * 1000;
-	YGZERO = (Y_ZRO) / 8.75 * 1000;
-
-	if((X_ZRO > 15 || X_ZRO < -15)&&(Y_ZRO > 15 || Y_ZRO < -15)) result = 0;
-	else result = 1;
-
-	pr_info("[FACTORY] XYGZERO %s -%d %d %d, %d", __func__,
-		X_ZRO,Y_ZRO,XGZERO, YGZERO);
-		
-	*raw_data_x = XGZERO * 1000 / scale_factor;
-	*raw_data_y = YGZERO * 1000 / scale_factor;
-	
-	CAM_INFO(CAM_OIS, "result %d, raw_data_x %ld, raw_data_y %ld", result, *raw_data_x, *raw_data_y);
-	
-	return result;
-}
-
 /* get offset from module for line test */
 void cam_ois_offset_test(struct cam_ois_ctrl_t *o_ctrl,
 	long *raw_data_x, long *raw_data_y, bool is_need_cal)
@@ -1495,8 +1146,8 @@ bool cam_ois_sine_wavecheck(struct cam_ois_ctrl_t *o_ctrl, int threshold,
 	int result_addr[1] = {0x00E4};
 	ret = cam_ois_i2c_write(o_ctrl, 0x0052, (uint16_t)threshold,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); /* error threshold level. */
 	ret |= cam_ois_i2c_write(o_ctrl, 0x0053, 0x00,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); /* count value for error judgement level. */
-	ret |= cam_ois_i2c_write(o_ctrl, 0x0054, 0x05,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); /* frequency level for measurement. */
-	ret |= cam_ois_i2c_write(o_ctrl, 0x0055, 0x34,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); /* amplitude level for measurement. */
+	ret |= cam_ois_i2c_write(o_ctrl, 0x0054, 0x03,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); /* frequency level for measurement. Modify from 5->3 for test*/
+	ret |= cam_ois_i2c_write(o_ctrl, 0x0055, 0x3A,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); /* amplitude level for measurement. */
 	ret |= cam_ois_i2c_write(o_ctrl, 0x0057, 0x02,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); /* vyvle level for measurement. */
 	ret |= cam_ois_i2c_write(o_ctrl, 0x0050, 0x01,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE); /* start sine wave check operation */
 
@@ -1597,7 +1248,7 @@ FW_UPDATE_RETRY:
 	}
 
 	msleep(50);
-	rc = cam_ois_wait_idle(o_ctrl, 5);
+	rc = cam_ois_wait_idle(o_ctrl, 30);
 	if (rc < 0) {
 		CAM_ERR(CAM_OIS, "wait ois idle status failed");
 		goto pwr_dwn;
@@ -1633,7 +1284,7 @@ FW_UPDATE_RETRY:
 					chksum_rumba, chksum_line, is_different_crc);
 		}		
 		is_cal_wrong = is_different_crc > 0 ? true : false;
-	}
+	}	
 
 	//	check cal version, if hw ver of cal version is not string, which means module hw ver is not written
 	//	there is no need to compare the version to update FW.
@@ -1781,11 +1432,6 @@ int cam_ois_set_ois_mode(struct cam_ois_ctrl_t *o_ctrl, uint16_t mode)
 	//if (mode == o_ctrl->ois_mode)
 	//	return 0;
 
-	if (o_ctrl->ois_mode == 0x16) {
-		CAM_INFO(CAM_OIS, "SensorHub Reset, Skip mode %u setting", mode);
-		return 0;
-	}
-
 	rc = cam_ois_i2c_write(o_ctrl, 0x0002, mode,CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
 	if (rc < 0)
 		CAM_ERR(CAM_OIS, "i2c write fail");
@@ -1841,98 +1487,3 @@ int cam_ois_fixed_aperture(struct cam_ois_ctrl_t *o_ctrl)
 
 	return rc;
 }
-
-int cam_ois_write_gyro_sensor_calibration(struct cam_ois_ctrl_t *o_ctrl)
-{
-	int ret = 0;
-	uint32_t val = 0;
-	int XGZERO = 0, YGZERO = 0;
-	int scale_factor = OIS_GYRO_SCALE_FACTOR_LSM6DSO;
-	long raw_data_x = 0, raw_data_y = 0;
-
-	ret = cam_ois_get_offset_data(o_ctrl, &raw_data_x, &raw_data_y);
-	if (ret < 0) {
-		CAM_ERR(CAM_OIS, "Failed to get gyro calibration data");
-		return -1;
-	}
-
-	CAM_DBG(CAM_OIS, "raw_data_x %ld, raw_data_y %ld", raw_data_x, raw_data_y);
-
-	XGZERO = raw_data_x * scale_factor / 1000;
-	if (XGZERO > 0x7FFF)
-		XGZERO = -((XGZERO ^ 0xFFFF) + 1);
-	
-	CAM_DBG(CAM_OIS, "XGZERO 0x%x", XGZERO);
-
-	val = (XGZERO & 0xFF);
-	
-	cam_ois_i2c_write(o_ctrl, 0x0248, val,
-		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
-	val = ((XGZERO >> 8) & 0xFF);
-	
-	cam_ois_i2c_write(o_ctrl, 0x0249, val,
-		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
-
-	YGZERO = raw_data_y * scale_factor / 1000;
-	if (YGZERO > 0x7FFF)
-		YGZERO = -((YGZERO ^ 0xFFFF) + 1);
-	
-	CAM_DBG(CAM_OIS, "YGZERO 0x%x", YGZERO);
-
-	val = (YGZERO & 0xFF);
-	
-	cam_ois_i2c_write(o_ctrl, 0x024A, val,
-		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
-	val = ((YGZERO >> 8) & 0xFF);
-	
-	cam_ois_i2c_write(o_ctrl, 0x024B, val,
-		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
-
-	return ret;
-}
-
-int cam_ois_rumba_init(struct cam_ois_ctrl_t *o_ctrl)
-{
-	int rc = 0;
-
-	// Write Gyro init offset to OIS RUMBA reg
-	rc = cam_ois_write_gyro_sensor_calibration(o_ctrl);
-	if (rc < 0)
-		CAM_ERR(CAM_OIS, "Write Gyro init to OIS RUMBA reg %d", rc);
-
-	return rc;
-}
-
-void cam_ois_reset_rumba(void *ctrl)
-{
-	struct cam_ois_ctrl_t *o_ctrl = NULL;
-	struct cam_ois_thread_msg_t *msg = NULL;
-	int rc = 0;
-
-	CAM_INFO(CAM_OIS, "E");
-
-	if (!ctrl)
-		return;
-
-	o_ctrl = (struct cam_ois_ctrl_t *)ctrl;
-
-	if (o_ctrl->cam_ois_state >= CAM_OIS_CONFIG) {
-		CAM_INFO(CAM_OIS, "camera is running, set mode 0x16");
-		msg = kmalloc(sizeof(struct cam_ois_thread_msg_t), GFP_ATOMIC);
-		if (msg == NULL) {
-			CAM_ERR(CAM_OIS, "Failed alloc memory for msg, Out of memory");
-			return;
-		}
-
-		memset(msg, 0, sizeof(struct cam_ois_thread_msg_t));
-		msg->msg_type = CAM_OIS_THREAD_MSG_RESET_RUMBA;
-		rc = cam_ois_thread_add_msg(o_ctrl, msg);
-		if (rc < 0)
-			CAM_ERR(CAM_OIS, "Failed add msg to OIS thread");
-	} else {
-		CAM_INFO(CAM_OIS, "camera is not running");
-	}
-
-	CAM_INFO(CAM_OIS, "X");
-}
-
