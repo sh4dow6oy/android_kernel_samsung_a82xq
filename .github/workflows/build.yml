@@ -24,16 +24,22 @@ jobs:
           submodules: true
           fetch-depth: 1
 
-      - name: Install build tools
+      - name: Install build tools and compatibility packages
         run: |
+          sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            git \
-            curl \
-            unzip \
-            wget \
-            zip \
-            zstd
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            python-is-python3 \
+            python2-minimal || true \
+            git curl unzip wget zip zstd libssl-dev bison flex
+
+          # Symlink python2 -> python3 dacă python2 nu există oficial în Ubuntu 24.04
+          if ! command -v python2 &> /dev/null; then
+            sudo ln -s $(which python3) /usr/local/bin/python2
+          fi
 
       - name: Download prebuilt Google clang
         run: |
