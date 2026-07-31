@@ -25,7 +25,7 @@ OUT_DIR="$(pwd)/out"
 DEFCONFIG_NAME="sm8150_sec_r5q_eur_open_defconfig"
 
 # Parametrii globali de compilare
-BUILD_VAR="-j$(nproc) O=${OUT_DIR} ARCH=arm64 CC=${CC} REAL_CC=${REAL_CC} CROSS_COMPILE=${CROSS_COMPILE} CLANG_TRIPLE=${CLANG_TRIPLE} LLVM=1 LLVM_IAS=1"
+BUILD_VAR="-j$(nproc) O=${OUT_DIR} ARCH=arm64 CC=${CC} REAL_CC=${REAL_CC} CROSS_COMPILE=${CROSS_COMPILE} CLANG_TRIPLE=${CLANG_TRIPLE} LD=ld.lld HOSTLD=ld.lld LLVM=1 LLVM_IAS=1"
 
 # Rezolvare incompatibilitate Python 2 în scripturile vechi ale kernel-ului (ex: gcc-wrapper.py)
 if [ -f "scripts/gcc-wrapper.py" ]; then
