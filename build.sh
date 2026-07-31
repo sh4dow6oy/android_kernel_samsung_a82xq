@@ -147,7 +147,7 @@ build_boot() {
         --second_offset "0x00000000" \
         --dtb_offset "0x01f00000" \
         --tags_offset "0x01e00000" \
-        --board "SRPUB26A012" \
+        --board "SRPSG08A009" \
         --pagesize "4096" \
         --os_version "16.0.0" \
         --os_patch_level "$MONTH" \
