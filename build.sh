@@ -19,7 +19,6 @@ build_kernel() {
     " >> arch/arm64/configs/sm8150_sec_r5q_eur_open_defconfig
 
     make $BUILD_VAR sm8150_sec_r5q_eur_open_defconfig
-    rm arch/arm64/configs/sm8150_sec_r5q_eur_open_defconfig
 }
 
 build_dtb() {
