@@ -101,8 +101,30 @@ build_boot() {
     MKBOOTIMG="$(pwd)/tools/mkbootimg.py"
     OUT_KERNEL="${OUT_DIR}/arch/arm64/boot/Image"
     DTB_OUT="${OUT_DIR}/arch/arm64/boot/dts/dtb"
-    RAMDISK="$(pwd)/boot/ramdisk"
+    RAMDISK_DIR="$(pwd)/boot/ramdisk"
     
+    # Căutăm dacă există un fișier .zip în folderul ramdisk
+    ZIP_RAMDISK=$(find "${RAMDISK_DIR}" -name "*.zip" | head -n 1)
+    
+    if [ -n "${ZIP_RAMDISK}" ]; then
+        echo "Found zipped ramdisk: ${ZIP_RAMDISK}. Extracting..."
+        mkdir -p "${RAMDISK_DIR}/extracted"
+        unzip -o "${ZIP_RAMDISK}" -d "${RAMDISK_DIR}/extracted/"
+        
+        # Căutăm ramdisk-ul dezarhivat (.cpio, .img sau .lz4 / .gz)
+        FINAL_RAMDISK=$(find "${RAMDISK_DIR}/extracted" -type f \( -name "*.cpio*" -o -name "*.img" -o -name "ramdisk*" \) | head -n 1)
+    else
+        # Dacă nu e zip, căutăm fișierul direct
+        FINAL_RAMDISK=$(find "${RAMDISK_DIR}" -type f \( -name "*.cpio*" -o -name "*.img" -o -name "ramdisk*" \) | head -n 1)
+    fi
+
+    if [ -z "${FINAL_RAMDISK}" ] || [ ! -f "${FINAL_RAMDISK}" ]; then
+        echo "Error: No valid ramdisk file found in ${RAMDISK_DIR}!"
+        exit 1
+    fi
+
+    echo "Using ramdisk file: ${FINAL_RAMDISK}"
+
     # Format YYYY-MM-DD valid pentru header v2 în mkbootimg
     MONTH="$(date +%Y-%m-01)"
 
@@ -116,7 +138,7 @@ build_boot() {
     python3 $MKBOOTIMG \
         --header_version 2 \
         --kernel "$OUT_KERNEL" \
-        --ramdisk "$RAMDISK" \
+        --ramdisk "$FINAL_RAMDISK" \
         --dtb "$DTB_OUT" \
         --cmdline "$CMDLINE" \
         --base "0x00000000" \
@@ -133,7 +155,6 @@ build_boot() {
 
     echo "boot.img generated successfully."
 }
-
 # Flux de execuție
 build_kernel
 build_dtb
